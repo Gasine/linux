@@ -28,9 +28,9 @@ static inline unsigned int get_age_threshold(void)
  * Init
  */
 
-void init_ktz_rq(struct ktz_rq *ktz_rq)
+void init_ktz_tdq(struct ktz_tdq *ktz_tdq)
 {
-	INIT_LIST_HEAD(&ktz_rq->queue);
+	INIT_LIST_HEAD(&ktz_tdq->queue);
 }
 
 /*
@@ -81,10 +81,10 @@ static void check_preempt_curr_ktz(struct rq *rq, struct task_struct *p, int fla
 
 static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct* prev, struct rq_flags *flags)
 {
-	struct ktz_rq *ktz_rq = &rq->ktz;
+	struct ktz_tdq *ktz_tdq = &rq->ktz;
 	struct sched_ktz_entity *next;
-	if(!list_empty(&ktz_rq->queue)) {
-		next = list_first_entry(&ktz_rq->queue, struct sched_ktz_entity, run_list);
+	if(!list_empty(&ktz_tdq->queue)) {
+		next = list_first_entry(&ktz_tdq->queue, struct sched_ktz_entity, run_list);
                 put_prev_task(rq, prev);
 		return ktz_task_of(next);
 	} else {

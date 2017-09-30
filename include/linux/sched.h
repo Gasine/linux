@@ -494,7 +494,21 @@ struct sched_dl_entity {
 };
 
 struct sched_ktz_entity {
+	/* legacy */
 	struct list_head run_list;
+	struct runq	*ts_runq;	/* Run-queue we're queued on. */
+	short		ts_flags;	/* TSF_* flags. */
+	int		ts_cpu;		/* CPU that we have affinity for. */
+	int		ts_rltick;	/* Real last tick, for affinity. */
+	int		ts_slice;	/* Ticks of slice remaining. */
+	u_int		ts_slptime;	/* Number of ticks we vol. slept */
+	u_int		ts_runtime;	/* Number of ticks we were running */
+	int		ts_ltick;	/* Last tick that we were running on */
+	int		ts_ftick;	/* First tick that we were running on */
+	int		ts_ticks;	/* Tick count */
+#ifdef KTR
+	//char		ts_name[TS_NAME_LEN];
+#endif
 };
 
 union rcu_special {

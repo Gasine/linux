@@ -19,6 +19,7 @@
 #include <linux/sched/task_stack.h>
 #include <linux/sched/cputime.h>
 #include <linux/sched/init.h>
+#include <linux/sched/runq.h>
 
 #include <linux/u64_stats_sync.h>
 #include <linux/kernel_stat.h>
@@ -603,8 +604,28 @@ struct dl_rq {
 	u64 bw_ratio;
 };
 
-struct ktz_rq {
+struct ktz_tdq {
+	/* legacy */
 	struct list_head queue;
+	//struct mtx_padalign tdq_lock;		/* run queue lock. */
+	//struct cpu_group *tdq_cg;		/* Pointer to cpu topology. */
+	volatile int	tdq_load;		/* Aggregate load. */
+	volatile int	tdq_cpu_idle;		/* cpu_idle() is active. */
+	int		tdq_sysload;		/* For loadavg, !ITHD load. */
+	int		tdq_transferable;	/* Transferable thread count. */
+	short		tdq_switchcnt;		/* Switches this tick. */
+	short		tdq_oldswitchcnt;	/* Switches last tick. */
+	u_char		tdq_lowpri;		/* Lowest priority thread. */
+	u_char		tdq_ipipending;		/* IPI pending. */
+	u_char		tdq_idx;		/* Current insert index. */
+	u_char		tdq_ridx;		/* Current removal index. */
+	struct runq	tdq_realtime;		/* real-time run queue. */
+	struct runq	tdq_timeshare;		/* timeshare run queue. */
+	struct runq	tdq_idle;		/* Queue of IDLE threads. */
+	//char		tdq_name[TDQ_NAME_LEN];
+#ifdef KTR
+	//char		tdq_loadname[TDQ_LOADNAME_LEN];
+#endif
 };
 
 #ifdef CONFIG_SMP
@@ -699,7 +720,7 @@ struct rq {
 	struct cfs_rq cfs;
 	struct rt_rq rt;
 	struct dl_rq dl;
-	struct ktz_rq ktz;
+	struct ktz_tdq ktz;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this cpu: */
@@ -1976,7 +1997,7 @@ print_numa_stats(struct seq_file *m, int node, unsigned long tsf,
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
 extern void init_rt_rq(struct rt_rq *rt_rq);
 extern void init_dl_rq(struct dl_rq *dl_rq);
-extern void init_ktz_rq(struct ktz_rq *ktz_rq);
+extern void init_ktz_tdq(struct ktz_tdq *ktz_tdq);
 
 extern void cfs_bandwidth_usage_inc(void);
 extern void cfs_bandwidth_usage_dec(void);
