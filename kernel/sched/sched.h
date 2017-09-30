@@ -603,6 +603,10 @@ struct dl_rq {
 	u64 bw_ratio;
 };
 
+struct ktz_rq {
+	struct list_head queue;
+};
+
 #ifdef CONFIG_SMP
 
 static inline bool sched_asym_prefer(int a, int b)
@@ -695,6 +699,7 @@ struct rq {
 	struct cfs_rq cfs;
 	struct rt_rq rt;
 	struct dl_rq dl;
+	struct ktz_rq ktz;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this cpu: */
@@ -1483,6 +1488,7 @@ extern const struct sched_class dl_sched_class;
 extern const struct sched_class rt_sched_class;
 extern const struct sched_class fair_sched_class;
 extern const struct sched_class idle_sched_class;
+extern const struct sched_class ktz_sched_class;
 
 
 #ifdef CONFIG_SMP
@@ -1970,6 +1976,7 @@ print_numa_stats(struct seq_file *m, int node, unsigned long tsf,
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
 extern void init_rt_rq(struct rt_rq *rt_rq);
 extern void init_dl_rq(struct dl_rq *dl_rq);
+extern void init_ktz_rq(struct ktz_rq *ktz_rq);
 
 extern void cfs_bandwidth_usage_inc(void);
 extern void cfs_bandwidth_usage_dec(void);

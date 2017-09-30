@@ -2373,7 +2373,10 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	} else if (rt_prio(p->prio)) {
 		p->sched_class = &rt_sched_class;
 	} else {
-		p->sched_class = &fair_sched_class;
+		if (ktz_prio(p->prio)) 
+			p->sched_class = &ktz_sched_class;
+		else
+			p->sched_class = &fair_sched_class;
 	}
 
 	init_entity_runnable_average(&p->se);
@@ -3745,7 +3748,10 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 			p->dl.dl_boosted = 0;
 		if (rt_prio(oldprio))
 			p->rt.timeout = 0;
-		p->sched_class = &fair_sched_class;
+		if (ktz_prio(prio))
+			p->sched_class = &ktz_sched_class;
+		else
+			p->sched_class = &fair_sched_class;
 	}
 
 	p->prio = prio;
@@ -3810,6 +3816,15 @@ void set_user_nice(struct task_struct *p, long nice)
 	p->prio = effective_prio(p);
 	delta = p->prio - old_prio;
 
+	const struct sched_class *prev_class = p->sched_class;
+
+	if (ktz_prio(p->prio))
+		p->sched_class = &ktz_sched_class;
+	else
+		p->sched_class = &fair_sched_class;
+	if(running)
+		p->sched_class->set_curr_task(rq);
+
 	if (queued) {
 		enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
 		/*
@@ -3819,8 +3834,8 @@ void set_user_nice(struct task_struct *p, long nice)
 		if (delta < 0 || (delta > 0 && task_running(rq, p)))
 			resched_curr(rq);
 	}
-	if (running)
-		set_curr_task(rq, p);
+	check_class_changed(rq, p, prev_class, old_prio);
+
 out_unlock:
 	task_rq_unlock(rq, p, &rf);
 }
@@ -3983,8 +3998,12 @@ static void __setscheduler(struct rq *rq, struct task_struct *p,
 		p->sched_class = &dl_sched_class;
 	else if (rt_prio(p->prio))
 		p->sched_class = &rt_sched_class;
-	else
-		p->sched_class = &fair_sched_class;
+	else {
+		if (ktz_prio(p->prio))
+			p->sched_class = &ktz_sched_class;
+		else
+			p->sched_class = &fair_sched_class;
+	}
 }
 
 /*
@@ -5847,6 +5866,7 @@ void __init sched_init(void)
 		init_cfs_rq(&rq->cfs);
 		init_rt_rq(&rq->rt);
 		init_dl_rq(&rq->dl);
+		init_ktz_rq(&rq->ktz);
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;
 		INIT_LIST_HEAD(&rq->leaf_cfs_rq_list);

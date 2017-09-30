@@ -493,6 +493,10 @@ struct sched_dl_entity {
 	struct hrtimer inactive_timer;
 };
 
+struct sched_ktz_entity {
+	struct list_head run_list;
+};
+
 union rcu_special {
 	struct {
 		u8			blocked;
@@ -562,6 +566,7 @@ struct task_struct {
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
+	struct sched_ktz_entity		ktz_se;
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group		*sched_task_group;
 #endif
@@ -1114,6 +1119,21 @@ struct task_struct {
 	 * Do not put anything below here!
 	 */
 };
+
+#define MIN_KTZ_PRIO 131
+#define MAX_KTZ_PRIO 135
+
+static inline int ktz_prio(int prio)
+{
+	if (prio >= MIN_KTZ_PRIO && prio <= MAX_KTZ_PRIO)
+		return 1;
+	return 0;
+}
+
+static inline int ktz_task(struct task_struct *p)
+{
+	return ktz_prio(p->prio);
+}
 
 static inline struct pid *task_pid(struct task_struct *task)
 {
