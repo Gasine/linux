@@ -496,18 +496,18 @@ struct sched_dl_entity {
 struct sched_ktz_entity {
 	/* legacy */
 	struct list_head run_list;
-	struct runq	*ts_runq;	/* Run-queue we're queued on. */
-	short		ts_flags;	/* TSF_* flags. */
-	int		ts_cpu;		/* CPU that we have affinity for. */
-	int		ts_rltick;	/* Real last tick, for affinity. */
-	int		ts_slice;	/* Ticks of slice remaining. */
-	unsigned long	ts_slptime;	/* Number of ticks we vol. slept */
-	unsigned long long	ts_startslp;/* First tick of current sleep */
-	unsigned long	ts_runtime;	/* Number of ticks we were running */
-	unsigned long long	ts_startrun;/* First tick of current sleep */
-	int		ts_ltick;	/* Last tick that we were running on */
-	int		ts_ftick;	/* First tick that we were running on */
-	int		ts_ticks;	/* Tick count */
+	struct runq	*runq;	/* Run-queue we're queued on. */
+	short		flags;	/* TSF_* flags. */
+	int		cpu;		/* CPU that we have affinity for. */
+	int		rltick;	/* Real last tick, for affinity. */
+	int		slice;	/* Ticks of slice remaining. */
+	unsigned long	slptime;	/* Number of ticks we vol. slept */
+	unsigned long long	startslp;/* First tick of current sleep */
+	unsigned long	runtime;	/* Number of ticks we were running */
+	unsigned long long	startrun;/* First tick of current sleep */
+	int		ltick;	/* Last tick that we were running on */
+	int		ftick;	/* First tick that we were running on */
+	int		ticks;	/* Tick count */
 #ifdef KTR
 	//char		ts_name[TS_NAME_LEN];
 #endif

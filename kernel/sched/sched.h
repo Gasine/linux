@@ -607,24 +607,24 @@ struct dl_rq {
 struct ktz_tdq {
 	/* legacy */
 	struct list_head queue;
-	//struct mtx_padalign tdq_lock;		/* run queue lock. */
-	//struct cpu_group *tdq_cg;		/* Pointer to cpu topology. */
-	volatile int	tdq_load;		/* Aggregate load. */
-	volatile int	tdq_cpu_idle;		/* cpu_idle() is active. */
-	int		tdq_sysload;		/* For loadavg, !ITHD load. */
-	int		tdq_transferable;	/* Transferable thread count. */
-	short		tdq_switchcnt;		/* Switches this tick. */
-	short		tdq_oldswitchcnt;	/* Switches last tick. */
-	u_char		tdq_lowpri;		/* Lowest priority thread. */
-	u_char		tdq_ipipending;		/* IPI pending. */
-	u_char		tdq_idx;		/* Current insert index. */
-	u_char		tdq_ridx;		/* Current removal index. */
-	struct runq	tdq_realtime;		/* real-time run queue. */
-	struct runq	tdq_timeshare;		/* timeshare run queue. */
-	struct runq	tdq_idle;		/* Queue of IDLE threads. */
-	//char		tdq_name[TDQ_NAME_LEN];
+	//struct mtx_padalign lock;		/* run queue lock. */
+	//struct cpu_group *cg;		/* Pointer to cpu topology. */
+	volatile int	load;		/* Aggregate load. */
+	volatile int	cpu_idle;		/* cpu_idle() is active. */
+	int		sysload;		/* For loadavg, !ITHD load. */
+	int		transferable;	/* Transferable thread count. */
+	short		switchcnt;		/* Switches this tick. */
+	short		oldswitchcnt;	/* Switches last tick. */
+	u_char		lowpri;		/* Lowest priority thread. */
+	u_char		ipipending;		/* IPI pending. */
+	u_char		idx;		/* Current insert index. */
+	u_char		ridx;		/* Current removal index. */
+	struct runq	realtime;		/* real-time run queue. */
+	struct runq	timeshare;		/* timeshare run queue. */
+	struct runq	idle;		/* Queue of IDLE threads. */
+	//char		name[TDQ_NAME_LEN];
 #ifdef KTR
-	//char		tdq_loadname[TDQ_LOADNAME_LEN];
+	//char		loadname[TDQ_LOADNAME_LEN];
 #endif
 };
 

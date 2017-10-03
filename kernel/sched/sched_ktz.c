@@ -34,14 +34,14 @@ static void update_runtime(struct task_struct *p)
 	struct sched_ktz_entity *ke = &p->ktz_se;
 
 	now = sched_clock();
-	delta_exec = now - ke->ts_startrun;
-	ke->ts_startrun = now;
-	ke->ts_runtime += delta_exec;
+	delta_exec = now - ke->startrun;
+	ke->startrun = now;
+	ke->runtime += delta_exec;
 }
 
 static void start_runtime(struct task_struct *p)
 {
-	p->ktz_se.ts_startrun = sched_clock();
+	p->ktz_se.startrun = sched_clock();
 }
 
 /*
@@ -60,8 +60,8 @@ void init_ktz_tdq(struct ktz_tdq *ktz_tdq)
 static void print_times(const char *prefix, struct task_struct *p)
 {
 	struct sched_ktz_entity ke = p->ktz_se;
-	unsigned long long slp = ke.ts_slptime / 1000000;
-	unsigned long long run = ke.ts_runtime / 1000000;
+	unsigned long long slp = ke.slptime / 1000000;
+	unsigned long long run = ke.runtime / 1000000;
 	printk_deferred("%s : Task %d, slptime = %llu ms, runtime = %llu ms\n", prefix, p->pid, slp, run);
 }
 
@@ -87,7 +87,7 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 
 	if (flags & ENQUEUE_WAKEUP) {
 		LOG("Task %d is waking up\n", p->pid);
-		ktz_se->ts_slptime += sched_clock() - ktz_se->ts_startslp;
+		ktz_se->slptime += sched_clock() - ktz_se->startslp;
 	}
 
 	add_nr_running(rq,1);
@@ -103,7 +103,7 @@ static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 
 	if (flags & DEQUEUE_SLEEP) {
 		LOG("Task %d is going to sleep\n", p->pid);
-		ktz_se->ts_startslp = sched_clock();
+		ktz_se->startslp = sched_clock();
 	}
 	else {
 		update_runtime(p);
@@ -133,8 +133,8 @@ static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct*
 	if(!list_empty(&ktz_tdq->queue)) {
 		next = list_first_entry(&ktz_tdq->queue, struct sched_ktz_entity, run_list);
 		next_task = ktz_task_of(next);
-		start_runtime(next);
-		LOG("Pick task %d (ran %d ms) ###### ", next_task->pid, next->ts_runtime / 1000000);
+		start_runtime(next_task);
+		LOG("Pick task %d (ran %d ms) ###### ", next_task->pid, next->runtime / 1000000);
 		return next_task;
 	}
 	else {
@@ -159,6 +159,16 @@ static void task_tick_ktz(struct rq *rq, struct task_struct *curr, int queued)
 {
 	LOG("Entering : task_tick_ktz\n");
 	LOG("Tick task %d", curr->pid);
+}
+
+void task_fork_ktz(struct task_struct *p)
+{
+	LOG("task_fork_ktz");
+}
+
+void task_dead_ktz(struct task_struct *p)
+{
+	LOG("task_dead_ktz");
 }
 
 static void switched_from_ktz(struct rq *rq, struct task_struct *p)
@@ -231,6 +241,8 @@ const struct sched_class ktz_sched_class = {
 
 	.set_curr_task		= set_curr_task_ktz,
 	.task_tick		= task_tick_ktz,
+	.task_fork		= task_fork_ktz,
+	.task_dead		= task_dead_ktz,
 
 	.switched_from		= switched_from_ktz,
 	.switched_to		= switched_to_ktz,
