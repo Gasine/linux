@@ -9,3 +9,5 @@ struct runq {
 	DECLARE_BITMAP(status, KTZ_RUNQ_BITMAP_SIZE); 
 	struct list_head queues[KTZ_HEADS_PER_RUNQ];
 };
+
+void runq_add(struct runq * q, struct task_struct *p, int flags);

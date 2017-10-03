@@ -501,8 +501,10 @@ struct sched_ktz_entity {
 	int		ts_cpu;		/* CPU that we have affinity for. */
 	int		ts_rltick;	/* Real last tick, for affinity. */
 	int		ts_slice;	/* Ticks of slice remaining. */
-	u_int		ts_slptime;	/* Number of ticks we vol. slept */
-	u_int		ts_runtime;	/* Number of ticks we were running */
+	unsigned long	ts_slptime;	/* Number of ticks we vol. slept */
+	unsigned long long	ts_startslp;/* First tick of current sleep */
+	unsigned long	ts_runtime;	/* Number of ticks we were running */
+	unsigned long long	ts_startrun;/* First tick of current sleep */
 	int		ts_ltick;	/* Last tick that we were running on */
 	int		ts_ftick;	/* First tick that we were running on */
 	int		ts_ticks;	/* Tick count */

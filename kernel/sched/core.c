@@ -3817,23 +3817,30 @@ void set_user_nice(struct task_struct *p, long nice)
 	delta = p->prio - old_prio;
 
 	const struct sched_class *prev_class = p->sched_class;
+	printk_deferred("set_user_nice : task : %d, running = %d, queued = %d, prev_class == fair = %d", 
+			p->pid, running, queued, prev_class == &fair_sched_class);
 
 	if (ktz_prio(p->prio))
 		p->sched_class = &ktz_sched_class;
 	else
 		p->sched_class = &fair_sched_class;
-	if(running)
-		p->sched_class->set_curr_task(rq);
-
 	if (queued) {
 		enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
 		/*
 		 * If the task increased its priority or is running and
 		 * lowered its priority, then reschedule its CPU:
 		 */
-		if (delta < 0 || (delta > 0 && task_running(rq, p)))
+		if (delta < 0 || (delta > 0 && task_running(rq, p))) {
+			printk_deferred("set_user_nice : resched");
 			resched_curr(rq);
+		}
+		else {
+			printk_deferred("set_user_nice : NO resched");
+		}
 	}
+	if(running)
+		set_curr_task(rq, p);
+
 	check_class_changed(rq, p, prev_class, old_prio);
 
 out_unlock:
@@ -5956,6 +5963,11 @@ void __init sched_init(void)
 	idle_thread_set_boot_cpu();
 	set_cpu_rq_start_time(smp_processor_id());
 #endif
+	/*if (unlikely(current->prio >= MIN_KTZ_PRIO && current->prio <= MAX_KTZ_PRIO))
+		current->sched_class = &ktz_sched_class;
+	else
+		current->sched_class = &fair_sched_class;*/
+
 	init_sched_fair_class();
 
 	init_schedstats();
