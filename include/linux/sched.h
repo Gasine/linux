@@ -498,11 +498,11 @@ struct sched_ktz_entity {
 	struct list_head run_list;
 	struct list_head runq;	/* Run-queue we're queued on. */
 	short		flags;	/* TSF_* flags. */
-	int		cpu;		/* CPU that we have affinity for. */
-	int		rltick;	/* Real last tick, for affinity. */
+	int		cpu;	/* CPU that we have affinity for. NU */
+	int		rltick;	/* Real last tick, for affinity. NU */
 	int		slice;	/* Ticks of slice remaining. */
 	unsigned long	slptime;	/* Number of ticks we vol. slept */
-	unsigned long long	startslp;/* First tick of current sleep */
+	unsigned long long	slptick;/* First tick of current sleep */
 	unsigned long	runtime;	/* Number of ticks we were running */
 	int		ltick;	/* Last tick that we were running on */
 	int		ftick;	/* First tick that we were running on */
@@ -1136,17 +1136,10 @@ struct task_struct {
 	 */
 };
 
-#define MIN_KTZ_PRIO 131
+#define MIN_KTZ_PRIO 125
 #define MAX_KTZ_PRIO 139
-#define KTZ_PRIO_RANGE (MAX_KTZ_PRIO - MIN_KTZ_PRIO)
-#define HALF_KTZ_PRIO MIN_KTZ_PRIO + (KTZ_PRIO_RANGE / 2)
+#define KTZ_PRIO_RANGE (MAX_KTZ_PRIO - MIN_KTZ_PRIO + 1)
 #define KTZ_PREEMPTED 0x1
-#define KTZ_MIN_INTERACT       (MIN_KTZ_PRIO)
-#define KTZ_MAX_INTERACT       (HALF_KTZ_PRIO)
-#define KTZ_INTERACT_RANGE	(KTZ_MAX_INTERACT - KTZ_MIN_INTERACT)
-#define KTZ_MIN_BATCH       (HALF_KTZ_PRIO + 1)
-#define KTZ_MAX_BATCH       (MAX_KTZ_PRIO)
-#define KTZ_BATCH_RANGE	(KTZ_MAX_BATCH - KTZ_MIN_BATCH)
 
 static inline int ktz_prio(int prio)
 {
