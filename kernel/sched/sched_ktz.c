@@ -33,6 +33,14 @@
 #define	SCHED_INTERACT_HALF	(SCHED_INTERACT_MAX / 2)
 #define	SCHED_INTERACT_THRESH	(30)
 
+/*
+ * These parameters determine the slice behavior for batch work.
+ */
+#define	SCHED_SLICE_DEFAULT_DIVISOR	10	/* ~94 ms, 12 stathz ticks. */
+#define	SCHED_SLICE_MIN_DIVISOR		6	/* DEFAULT/MIN = ~16 ms. */
+#define	TDF_SLICEEND	0	/* TODO : find linux counterpart. */
+#define TD_IS_IDLETHREAD(task)	false /* TODO : needed ? */
+
 /* Locking stuff. */
 #define TDQ_LOCK_ASSERT(tdq, flag)
 
@@ -41,6 +49,8 @@
 /* Globals */
 static int tickincr = 1 << SCHED_TICK_SHIFT;	/* 1 Should be correct. */
 static int sched_interact = SCHED_INTERACT_THRESH;
+static int sched_slice = 10;	/* reset during boot. */
+static int sched_slice_min = 1;	/* reset during boot. */
 
 /* Helper macros / defines. */
 #define LOG(...) 	printk_deferred(__VA_ARGS__)
@@ -178,6 +188,21 @@ tdq_load_rem(struct ktz_tdq *tdq, struct task_struct *p)
 	tdq->sysload--;
 }
 
+/*
+ * Bound timeshare latency by decreasing slice size as load increases.  We
+ * consider the maximum latency as the sum of the threads waiting to run
+ * aside from curthread and target no more than sched_slice latency but
+ * no less than sched_slice_min runtime.
+ */
+static inline int compute_slice(struct ktz_tdq *tdq) {
+	int load = tdq->sysload - 1;
+	if (load >= SCHED_SLICE_MIN_DIVISOR)
+		return (sched_slice_min);
+	if (load <= 1)
+		return (sched_slice);
+	return (sched_slice / load);
+}
+
 static inline void print_stats(struct task_struct *p)
 {
 	struct sched_ktz_entity *kse = KTZ_SE(p);
@@ -220,7 +245,7 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct ktz_tdq *tdq = TDQ(rq);
-	struct sched_ktz_entity *ktz_se = &p->ktz_se;
+	struct sched_ktz_entity *ktz_se = KTZ_SE(p);
 
 	sub_nr_running(rq,1);
 	if (flags & DEQUEUE_SLEEP) {
@@ -242,11 +267,14 @@ static void check_preempt_curr_ktz(struct rq *rq, struct task_struct *p, int fla
 
 static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct* prev, struct rq_flags *flags)
 {
-	struct ktz_tdq *ktz_tdq = &rq->ktz;
+	struct ktz_tdq *tdq = TDQ(rq);
 	struct sched_ktz_entity *next;
-	if(!list_empty(&ktz_tdq->queue)) {
-		next = list_first_entry(&ktz_tdq->queue, struct sched_ktz_entity, run_list);
+	struct task_struct *next_task;
+
+	if(!list_empty(&tdq->queue)) {
+		next = list_first_entry(&tdq->queue, struct sched_ktz_entity, run_list);
                 put_prev_task(rq, prev);
+		next->slice = compute_slice(tdq) - sched_slice_min;
 		return ktz_task_of(next);
 	} else {
 		return NULL;
@@ -266,12 +294,22 @@ static void task_tick_ktz(struct rq *rq, struct task_struct *curr, int queued)
 	struct ktz_tdq *tdq = TDQ(rq);
 	struct sched_ktz_entity *ktz_se = KTZ_SE(curr);
 
+	tdq->oldswitchcnt = tdq->switchcnt;
+	tdq->switchcnt = tdq->load;
+
 	/* Account runtime. */
 	ktz_se->runtime += tickincr;
 	interact_update(curr);
 
 	/* Update CPU stats. */
 	pctcpu_update(ktz_se, true);
+
+	if (!TD_IS_IDLETHREAD(curr) && ++ktz_se->slice >= compute_slice(tdq)) {
+		LOG("Resched %d\n", curr->pid);
+		ktz_se->slice = 0;
+		ktz_se->flags |= TDF_SLICEEND;
+		resched_curr(rq);
+	}
 }
 
 static void task_fork_ktz(struct task_struct *p)
