@@ -33,6 +33,11 @@
 #define	SCHED_INTERACT_HALF	(SCHED_INTERACT_MAX / 2)
 #define	SCHED_INTERACT_THRESH	(30)
 
+/* Locking stuff. */
+#define TDQ_LOCK_ASSERT(tdq, flag)
+
+#define THREAD_LOCK_ASSERT(td, flags)
+
 /* Globals */
 static int tickincr = 1 << SCHED_TICK_SHIFT;	/* 1 Should be correct. */
 static int sched_interact = SCHED_INTERACT_THRESH;
@@ -41,11 +46,11 @@ static int sched_interact = SCHED_INTERACT_THRESH;
 #define LOG(...) 	printk_deferred(__VA_ARGS__)
 #define KTZ_SE(p)	(&(p)->ktz_se)
 #define PRINT(name)	printk_deferred(#name "\t\t = %d", name)
+#define TDQ(rq)		(&(rq)->ktz)
 
 void init_ktz_tdq(struct ktz_tdq *ktz_tdq)
 {
 	INIT_LIST_HEAD(&ktz_tdq->queue);
-
 	/* Print config. */
 	PRINT(tickincr);
 }
@@ -144,6 +149,35 @@ static int interact_score(struct task_struct *p)
 
 }
 
+/*
+ * Load is maintained for all threads RUNNING and ON_RUNQ.  Add the load
+ * for this thread to the referenced thread queue.
+ */
+static void tdq_load_add(struct ktz_tdq *tdq, struct task_struct *p)
+{
+	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
+	THREAD_LOCK_ASSERT(p, MA_OWNED);
+
+	tdq->load++;
+	//if ((td->td_flags & TDF_NOLOAD) == 0) /* We probably dont care. */
+	tdq->sysload++;
+}
+
+/*
+ * Remove the load from a thread that is transitioning to a sleep state or
+ * exiting.
+ */
+static void
+tdq_load_rem(struct ktz_tdq *tdq, struct task_struct *p)
+{
+	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
+	THREAD_LOCK_ASSERT(p, MA_OWNED);
+
+	tdq->load--;
+	//if ((td->td_flags & TDF_NOLOAD) == 0) /* We probably dont care. */
+	tdq->sysload--;
+}
+
 static inline void print_stats(struct task_struct *p)
 {
 	struct sched_ktz_entity *kse = KTZ_SE(p);
@@ -163,6 +197,7 @@ static inline struct task_struct *ktz_task_of(struct sched_ktz_entity *ktz_se)
 
 static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 {
+	struct ktz_tdq *tdq = TDQ(rq);
 	struct sched_ktz_entity *ktz_se = KTZ_SE(p);
 	struct list_head *queue = &rq->ktz.queue;
 
@@ -177,10 +212,14 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 	}
 	ktz_se->slice = 0;
 	list_add_tail(&ktz_se->run_list, queue);
+
+	/* Add load, should be at the end. */
+	tdq_load_add(tdq, p);
 }
 
 static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 {
+	struct ktz_tdq *tdq = TDQ(rq);
 	struct sched_ktz_entity *ktz_se = &p->ktz_se;
 
 	sub_nr_running(rq,1);
@@ -189,6 +228,7 @@ static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 		ktz_se->slptick = jiffies;
 	}
 	list_del_init(&ktz_se->run_list);
+	tdq_load_rem(tdq, p);
 	print_stats(p);
 }
 
@@ -223,6 +263,7 @@ static void set_curr_task_ktz(struct rq *rq)
 
 static void task_tick_ktz(struct rq *rq, struct task_struct *curr, int queued)
 {
+	struct ktz_tdq *tdq = TDQ(rq);
 	struct sched_ktz_entity *ktz_se = KTZ_SE(curr);
 
 	/* Account runtime. */
