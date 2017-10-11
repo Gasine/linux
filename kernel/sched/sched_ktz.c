@@ -261,8 +261,22 @@ static void yield_task_ktz(struct rq *rq)
 {
 }
 
+/*
+ * Very simplified version.
+ */
 static void check_preempt_curr_ktz(struct rq *rq, struct task_struct *p, int flags)
 {
+	int pri = p->prio;
+	int cpri = rq->curr->prio;
+
+	if (cpri <= pri)
+		return false;
+	else
+		return true;
+
+	// TODO : Add when adding SMP support.
+	/*if (remote && pri <= PRI_MAX_INTERACT && cpri > PRI_MAX_INTERACT)
+		return (1);*/
 }
 
 static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct* prev, struct rq_flags *flags)
