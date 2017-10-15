@@ -617,8 +617,8 @@ struct ktz_tdq {
 	short		oldswitchcnt;	/* Switches last tick. */
 	u_char		lowpri;		/* Lowest priority thread. */
 	u_char		ipipending;		/* IPI pending. */
-	u_char		idx;		/* Current insert index. */
-	u_char		ridx;		/* Current removal index. */
+	int		idx;		/* Current insert index. */
+	int		ridx;		/* Current removal index. */
 	struct runq	realtime;		/* real-time run queue. */
 	struct runq	timeshare;		/* timeshare run queue. */
 	struct runq	idle;		/* Queue of IDLE threads. */

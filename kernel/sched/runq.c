@@ -1,4 +1,13 @@
 #include <linux/sched/runq.h>
+#define LOG(...) 	printk_deferred(__VA_ARGS__)
+
+void runq_init(struct runq *q)
+{
+	int i;
+	for (i = 0; i < KTZ_HEADS_PER_RUNQ; i ++) {
+		INIT_LIST_HEAD(&q->queues[i]);
+	}
+}
 
 void runq_set_bit(struct runq *q, int pri)
 {
@@ -14,23 +23,30 @@ void runq_clear_bit(struct runq *q, int pri)
 
 void runq_add(struct runq * q, struct task_struct *p, int flags)
 {
-	int pri;
-	pri = p->prio / KTZ_PRIO_PER_QUEUE;
-	runq_add_pri(q, p, pri, flags);
+	runq_add_pri(q, p, p->prio, flags);
 }
 
 void runq_add_pri(struct runq * q, struct task_struct *p, int pri, int flags)
 {
 	struct list_head *head;
 	struct sched_ktz_entity *ke = &p->ktz_se;
+	ke->curr_runq = q;
 
+	//LOG("runq_add, pri : %d", pri);
+
+	//ke->rqindex = (pri - MIN_KTZ_PRIO) / KTZ_PRIO_PER_QUEUE;
 	ke->rqindex = pri;
+	/* Sanity check. */
+	if (ke->rqindex > KTZ_HEADS_PER_RUNQ)
+		BUG();
 	runq_set_bit(q, pri);
 	head = &q->queues[pri];
 	if (flags & KTZ_PREEMPTED) {
+		LOG("Add %d to head of queue %d", p->pid, ke->rqindex);
 		list_add(&ke->runq, head);	
 	}
 	else {
+		LOG("Add %d to tail of queue %d", p->pid, ke->rqindex);
 		list_add_tail(&ke->runq, head);	
 	}
 }
@@ -53,10 +69,67 @@ void runq_remove_idx(struct runq *q, struct task_struct *p, int *idx)
 
 	pri = ke->rqindex;
 	head = &q->queues[pri];
-	list_del(&ke->runq);
+	list_del_init(&ke->runq);
 	if (list_empty(head)) {
+		LOG("Clear bit %d\n", pri);
 		runq_clear_bit(q, pri);
 		if (idx != NULL && *idx == pri)
 			*idx = (pri + 1) % KTZ_HEADS_PER_RUNQ;
 	}
+}
+
+static int runq_findbit(struct runq *q)
+{
+	int f;
+	f = find_first_bit(q->status, KTZ_HEADS_PER_RUNQ);
+	return f == KTZ_HEADS_PER_RUNQ ? -1 : f;
+}
+
+static inline struct task_struct *ktz_task_of(struct sched_ktz_entity *ktz_se)
+{
+	return container_of(ktz_se, struct task_struct, ktz_se);
+}
+
+/*
+ * Find the highest priority process on the run queue.
+ */
+struct task_struct *runq_choose(struct runq *rq)
+{
+	struct list_head *rqh;
+	struct sched_ktz_entity *first;
+	int pri;
+
+	while ((pri = runq_findbit(rq)) != -1) {
+		LOG("First non empty queue : %d", pri);
+		rqh = &rq->queues[pri];
+		first = list_first_entry(rqh, struct sched_ktz_entity, runq);
+		return ktz_task_of(first);
+	}
+
+	//LOG("runq_choose returned NULL");
+	return (NULL);
+}
+
+static int runq_findbit_from(struct runq *q, int idx)
+{
+	int f;
+	f = find_next_bit(q->status, KTZ_HEADS_PER_RUNQ, idx);
+	return f == KTZ_HEADS_PER_RUNQ ? -1 : f;
+}
+
+struct task_struct *runq_choose_from(struct runq *rq, int idx)
+{
+	struct list_head *rqh;
+	struct sched_ktz_entity *first;
+	int pri;
+
+	if ((pri = runq_findbit_from(rq, idx)) != -1) {
+		//LOG("First non empty queue from %d: %d", idx, pri);
+		rqh = &rq->queues[pri];
+		first = list_first_entry(rqh, struct sched_ktz_entity, runq);
+		return ktz_task_of(first);
+	}
+	//LOG("runq_choose_from returned NULL");
+
+	return (NULL);
 }

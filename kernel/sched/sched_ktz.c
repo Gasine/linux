@@ -1,5 +1,12 @@
 #include "sched.h"
 
+/*
+ * Changes:
+ * 	_ DROP everything related to fork.
+ * 	_ DROP burrowing etc...
+ * 	_ Simplify preemption.
+ */
+
 /* Macros and defines. */
 /* Timeshare range = Whole range of this scheduler. */
 #define	PRI_TIMESHARE_RANGE	(PRI_MAX_TIMESHARE - PRI_MIN_TIMESHARE + 1)
@@ -33,6 +40,13 @@
 #define	SCHED_INTERACT_HALF	(SCHED_INTERACT_MAX / 2)
 #define	SCHED_INTERACT_THRESH	(30)
 
+#define roundup(x, y) 		((((x)+((y)-1))/(y))*(y))
+#define	SCHED_TICK_HZ(ts)	((ts)->ticks >> SCHED_TICK_SHIFT)
+#define	SCHED_TICK_TOTAL(ts)	(max((ts)->ltick - (ts)->ftick, HZ))
+#define	SCHED_PRI_TICKS(ts)						\
+    (SCHED_TICK_HZ((ts)) /						\
+    (roundup(SCHED_TICK_TOTAL((ts)), SCHED_PRI_RANGE) / SCHED_PRI_RANGE))
+
 /*
  * These parameters determine the slice behavior for batch work.
  */
@@ -41,10 +55,24 @@
 #define	TDF_SLICEEND	0	/* TODO : find linux counterpart. */
 #define TD_IS_IDLETHREAD(task)	false /* TODO : needed ? */
 
+/*
+ * Task states.
+ */
+#define TDS_INACTIVE	(2<<1)
+#define TDS_INHIBITED	(2<<2)
+#define TDS_CAN_RUN	(2<<3)
+#define TDS_RUNQ	(2<<4)
+#define TDS_RUNNING	(2<<5)
+
+/* Flags from FreeBSD. */
+#define SRQ_PREEMPTED 	(2<<1)
+
 /* Locking stuff. */
 #define TDQ_LOCK_ASSERT(tdq, flag)
-
 #define THREAD_LOCK_ASSERT(td, flags)
+
+/* Load balancing stuff */
+#define THREAD_CAN_MIGRATE(td)	false /*TODO*/
 
 /* Globals */
 static int tickincr = 1 << SCHED_TICK_SHIFT;	/* 1 Should be correct. */
@@ -61,6 +89,12 @@ static int sched_slice_min = 1;	/* reset during boot. */
 void init_ktz_tdq(struct ktz_tdq *ktz_tdq)
 {
 	INIT_LIST_HEAD(&ktz_tdq->queue);
+
+	/* Init runqueues. */
+	runq_init(&ktz_tdq->realtime);
+	runq_init(&ktz_tdq->timeshare);
+	runq_init(&ktz_tdq->idle);
+	
 	/* Print config. */
 	PRINT(tickincr);
 }
@@ -194,13 +228,182 @@ tdq_load_rem(struct ktz_tdq *tdq, struct task_struct *p)
  * aside from curthread and target no more than sched_slice latency but
  * no less than sched_slice_min runtime.
  */
-static inline int compute_slice(struct ktz_tdq *tdq) {
+static inline int compute_slice(struct ktz_tdq *tdq) 
+{
 	int load = tdq->sysload - 1;
 	if (load >= SCHED_SLICE_MIN_DIVISOR)
 		return (sched_slice_min);
 	if (load <= 1)
 		return (sched_slice);
 	return (sched_slice / load);
+}
+
+/*
+ * Scale the scheduling priority according to the "interactivity" of this
+ * process.
+ */
+static void compute_priority(struct task_struct *p)
+{
+	int score;
+	int pri;
+	struct sched_ktz_entity *ktz_se = KTZ_SE(p);
+
+	/*
+	 * If the score is interactive we place the thread in the realtime
+	 * queue with a priority that is less than kernel and interrupt
+	 * priorities.  These threads are not subject to nice restrictions.
+	 *
+	 * Scores greater than this are placed on the normal timeshare queue
+	 * where the priority is partially decided by the most recent cpu
+	 * utilization and the rest is decided by nice value.
+	 *
+	 * The nice value of the process has a linear effect on the calculated
+	 * score.  Negative nice values make it easier for a thread to be
+	 * considered interactive.
+	 */
+	score = max(0, interact_score(p) + task_nice(p));
+	if (score < sched_interact) {
+		pri = PRI_MIN_INTERACT;
+		pri += ((PRI_MAX_INTERACT - PRI_MIN_INTERACT + 1) / sched_interact) * score;
+	} else {
+		pri = SCHED_PRI_MIN;
+		if (ktz_se->ticks)
+			pri += min(SCHED_PRI_TICKS(ktz_se), SCHED_PRI_RANGE - 1);
+		pri += task_nice(p);
+	}
+
+	/* Test : */
+	p->prio = pri;
+	ktz_se->base_user_pri = pri;
+	if (ktz_se->lend_user_pri <= pri)
+		return;
+	ktz_se->user_pri = pri;
+}
+
+/*
+ * Add a thread to the actual run-queue.  Keeps transferable counts up to
+ * date with what is actually on the run-queue.  Selects the correct
+ * queue position for timeshare threads.
+ */
+static inline void tdq_runq_add(struct ktz_tdq *tdq, struct task_struct *td, int flags)
+{
+	struct sched_ktz_entity *ts =  KTZ_SE(td);
+	struct runq *dest;
+	u_char pri;
+
+	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
+	THREAD_LOCK_ASSERT(td, MA_OWNED);
+
+	pri = td->static_prio;
+	ts->state = TDS_RUNQ;	
+	if (THREAD_CAN_MIGRATE(td)) {
+		tdq->transferable++;
+		// TODO
+		//ts->flags |= TSF_XFERABLE;
+	}
+	if (pri < PRI_MIN_BATCH) {
+		LOG("Add %d to realtime.\n", td->pid);
+		dest = &tdq->realtime;
+	}
+	else if (pri <= PRI_MAX_BATCH) {
+		dest = &tdq->timeshare;
+		LOG("Add %d to timeshare, flag = %d\n", td->pid, flags);
+		if ((flags & SRQ_PREEMPTED) == 0) {
+			LOG("Weird path");
+			pri = KTZ_HEADS_PER_RUNQ * (pri - PRI_MIN_BATCH) / PRI_BATCH_RANGE;
+			pri = (pri + tdq->idx) % KTZ_HEADS_PER_RUNQ;
+			if (tdq->ridx != tdq->idx && pri == tdq->ridx)
+				pri = (unsigned char)(pri - 1) % KTZ_HEADS_PER_RUNQ;
+		}
+		else {
+			LOG("Ridx path");
+			pri = tdq->ridx;
+		}
+		runq_add_pri(dest, td, pri, flags);
+		return;
+	}
+	else {
+		/* Should never happen. */
+		LOG("Add %d to idle.\n", td->pid);
+		dest = &tdq->idle;
+	}
+	runq_add(dest, td, flags);
+}
+
+static void tdq_add(struct ktz_tdq *tdq, struct task_struct *p, int flags)
+{
+	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
+	if (p->prio < tdq->lowpri)
+		tdq->lowpri = p->prio;
+	tdq_runq_add(tdq, p, flags);
+	tdq_load_add(tdq, p);
+}
+
+/* 
+ * Remove a thread from a run-queue.  This typically happens when a thread
+ * is selected to run.  Running threads are not on the queue and the
+ * transferable count does not reflect them.
+ */
+static inline void tdq_runq_rem(struct ktz_tdq *tdq, struct task_struct *td)
+{
+	struct sched_ktz_entity *ts = KTZ_SE(td);
+	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
+	// TODO
+	/*if (ts->ts_flags & TSF_XFERABLE) {
+		tdq->tdq_transferable--;
+		ts->ts_flags &= ~TSF_XFERABLE;
+	}*/
+	if (ts->curr_runq == &tdq->timeshare) {
+		if (tdq->idx != tdq->ridx)
+			runq_remove_idx(ts->curr_runq, td, &tdq->ridx);
+		else
+			runq_remove_idx(ts->curr_runq, td, NULL);
+	} 
+	else {
+		runq_remove(ts->curr_runq, td);
+	}
+}
+
+/*
+ * Pick the highest priority task we have and return it.
+ */
+static struct task_struct *tdq_choose(struct ktz_tdq *tdq)
+{
+	struct task_struct *td;
+
+	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
+	td = runq_choose(&tdq->realtime);
+	if (td != NULL) {
+		LOG("Return from realtime.");
+		return (td);
+	}
+	td = runq_choose_from(&tdq->timeshare, tdq->ridx);
+	if (td != NULL) {
+		LOG("Return from timeshare.");
+		return td;
+	}
+	td = runq_choose(&tdq->idle);
+	if (td != NULL) {
+		return td;
+	}
+	return NULL;
+}
+
+struct task_struct *sched_choose(struct rq *rq)
+{
+	struct task_struct *td;
+	struct ktz_tdq *tdq = TDQ(rq);
+
+	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
+	td = tdq_choose(tdq);
+	if (td) {
+		tdq_runq_rem(tdq, td);
+		tdq->lowpri = td->prio;
+		return td;
+	}
+	//tdq->lowpri = PRI_MAX_IDLE;
+	tdq->lowpri = MAX_KTZ_PRIO;
+	return NULL;
 }
 
 static inline void print_stats(struct task_struct *p)
@@ -227,6 +430,7 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 	struct list_head *queue = &rq->ktz.queue;
 
 	add_nr_running(rq,1);
+	LOG("Add task %d with prio %d (%d)\n", p->pid, p->prio, p->static_prio);
 	if (flags & ENQUEUE_WAKEUP) {
 		LOG("Task %d is waking up\n", p->pid);
 		/* Count sleeping ticks. */
@@ -238,8 +442,7 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 	ktz_se->slice = 0;
 	list_add_tail(&ktz_se->run_list, queue);
 
-	/* Add load, should be at the end. */
-	tdq_load_add(tdq, p);
+	tdq_add(tdq, p, 0);
 }
 
 static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
@@ -253,6 +456,7 @@ static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 		ktz_se->slptick = jiffies;
 	}
 	list_del_init(&ktz_se->run_list);
+	tdq_runq_rem(tdq, p);
 	tdq_load_rem(tdq, p);
 	print_stats(p);
 }
@@ -284,12 +488,21 @@ static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct*
 	struct ktz_tdq *tdq = TDQ(rq);
 	struct sched_ktz_entity *next;
 	struct task_struct *next_task;
+	struct task_struct *next_ule;
+
+	next_ule = tdq_choose(tdq);
+	if (next_ule)
+		LOG("Next ULE : %d\n", next_ule->pid);
+	else
+		LOG("Next ULE : NULL\n");
 
 	if(!list_empty(&tdq->queue)) {
 		next = list_first_entry(&tdq->queue, struct sched_ktz_entity, run_list);
                 put_prev_task(rq, prev);
 		next->slice = compute_slice(tdq) - sched_slice_min;
-		return ktz_task_of(next);
+		next_task = ktz_task_of(next);
+		LOG("Next KTZ : %d\n", next_task->pid);
+		return next_task;
 	} else {
 		return NULL;
 	}
@@ -311,6 +524,16 @@ static void task_tick_ktz(struct rq *rq, struct task_struct *curr, int queued)
 	tdq->oldswitchcnt = tdq->switchcnt;
 	tdq->switchcnt = tdq->load;
 
+	/*
+	 * Advance the insert index once for each tick to ensure that all
+	 * threads get a chance to run.
+	 */
+	if (tdq->idx == tdq->ridx) {
+		tdq->idx = (tdq->idx + 1) % KTZ_HEADS_PER_RUNQ;
+		if (list_empty(&tdq->timeshare.queues[tdq->ridx]))
+			tdq->ridx = tdq->idx;
+	}
+
 	/* Account runtime. */
 	ktz_se->runtime += tickincr;
 	interact_update(curr);
@@ -319,7 +542,6 @@ static void task_tick_ktz(struct rq *rq, struct task_struct *curr, int queued)
 	pctcpu_update(ktz_se, true);
 
 	if (!TD_IS_IDLETHREAD(curr) && ++ktz_se->slice >= compute_slice(tdq)) {
-		LOG("Resched %d\n", curr->pid);
 		ktz_se->slice = 0;
 		ktz_se->flags |= TDF_SLICEEND;
 		resched_curr(rq);

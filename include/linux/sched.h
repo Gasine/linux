@@ -496,7 +496,8 @@ struct sched_dl_entity {
 struct sched_ktz_entity {
 	/* legacy */
 	struct list_head run_list;
-	struct list_head runq;	/* Run-queue we're queued on. */
+	struct runq 	*curr_runq;	/* Current runq. */
+	struct list_head runq;	/* node in runq. */
 	short		flags;	/* TSF_* flags. */
 	int		cpu;	/* CPU that we have affinity for. NU */
 	int		rltick;	/* Real last tick, for affinity. NU */
@@ -511,6 +512,11 @@ struct sched_ktz_entity {
 #ifdef KTR
 	//char		ts_name[TS_NAME_LEN];
 #endif
+	/* May not be useful. */
+	int		base_user_pri;
+	int		lend_user_pri;
+	int		user_pri;
+	int		state;
 };
 
 union rcu_special {
