@@ -86,6 +86,8 @@ static int sched_slice_min = 1;	/* reset during boot. */
 #define PRINT(name)	printk_deferred(#name "\t\t = %d", name)
 #define TDQ(rq)		(&(rq)->ktz)
 
+#define LOG(...) 	do{}while(0)
+
 void init_ktz_tdq(struct ktz_tdq *ktz_tdq)
 {
 	INIT_LIST_HEAD(&ktz_tdq->queue);

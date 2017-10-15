@@ -3817,8 +3817,6 @@ void set_user_nice(struct task_struct *p, long nice)
 	delta = p->prio - old_prio;
 
 	const struct sched_class *prev_class = p->sched_class;
-	printk_deferred("set_user_nice : task : %d, running = %d, queued = %d, prev_class == fair = %d", 
-			p->pid, running, queued, prev_class == &fair_sched_class);
 
 	if (ktz_prio(p->prio))
 		p->sched_class = &ktz_sched_class;

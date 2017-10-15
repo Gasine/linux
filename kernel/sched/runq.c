@@ -1,5 +1,4 @@
 #include <linux/sched/runq.h>
-#define LOG(...) 	printk_deferred(__VA_ARGS__)
 
 void runq_init(struct runq *q)
 {
@@ -32,7 +31,6 @@ void runq_add_pri(struct runq * q, struct task_struct *p, int pri, int flags)
 	struct sched_ktz_entity *ke = &p->ktz_se;
 	ke->curr_runq = q;
 
-	//LOG("runq_add, pri : %d", pri);
 
 	//ke->rqindex = (pri - MIN_KTZ_PRIO) / KTZ_PRIO_PER_QUEUE;
 	ke->rqindex = pri;
@@ -42,11 +40,9 @@ void runq_add_pri(struct runq * q, struct task_struct *p, int pri, int flags)
 	runq_set_bit(q, pri);
 	head = &q->queues[pri];
 	if (flags & KTZ_PREEMPTED) {
-		LOG("Add %d to head of queue %d", p->pid, ke->rqindex);
 		list_add(&ke->runq, head);	
 	}
 	else {
-		LOG("Add %d to tail of queue %d", p->pid, ke->rqindex);
 		list_add_tail(&ke->runq, head);	
 	}
 }
@@ -71,7 +67,6 @@ void runq_remove_idx(struct runq *q, struct task_struct *p, int *idx)
 	head = &q->queues[pri];
 	list_del_init(&ke->runq);
 	if (list_empty(head)) {
-		LOG("Clear bit %d\n", pri);
 		runq_clear_bit(q, pri);
 		if (idx != NULL && *idx == pri)
 			*idx = (pri + 1) % KTZ_HEADS_PER_RUNQ;
@@ -100,13 +95,11 @@ struct task_struct *runq_choose(struct runq *rq)
 	int pri;
 
 	while ((pri = runq_findbit(rq)) != -1) {
-		LOG("First non empty queue : %d", pri);
 		rqh = &rq->queues[pri];
 		first = list_first_entry(rqh, struct sched_ktz_entity, runq);
 		return ktz_task_of(first);
 	}
 
-	//LOG("runq_choose returned NULL");
 	return (NULL);
 }
 
@@ -132,12 +125,10 @@ struct task_struct *runq_choose_from(struct runq *rq, int idx)
 	int pri;
 
 	if ((pri = runq_findbit_from(rq, idx)) != -1) {
-		//LOG("First non empty queue from %d: %d", idx, pri);
 		rqh = &rq->queues[pri];
 		first = list_first_entry(rqh, struct sched_ktz_entity, runq);
 		return ktz_task_of(first);
 	}
-	//LOG("runq_choose_from returned NULL");
 
 	return (NULL);
 }
@@ -150,10 +141,8 @@ void runq_print(struct runq *q)
 
 	for (i = 0; i < KTZ_HEADS_PER_RUNQ; ++i) {
 		if (!list_empty(&q->queues[i])) {
-			LOG("\t-> Queue %d:\n", i);
 			list_for_each_entry(pos, &q->queues[i], runq) {
 				t = ktz_task_of(pos);
-				LOG("\t\t_ %d\n", t->pid);
 			}
 		}
 	}
