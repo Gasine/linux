@@ -114,7 +114,15 @@ static int runq_findbit_from(struct runq *q, int idx)
 {
 	int f;
 	f = find_next_bit(q->status, KTZ_HEADS_PER_RUNQ, idx);
-	return f == KTZ_HEADS_PER_RUNQ ? -1 : f;
+	if (f == KTZ_HEADS_PER_RUNQ) {
+		if (idx == 0)
+			return -1;
+		else
+			return runq_findbit(q);
+	}
+	else {
+		return f;
+	}
 }
 
 struct task_struct *runq_choose_from(struct runq *rq, int idx)
@@ -132,4 +140,21 @@ struct task_struct *runq_choose_from(struct runq *rq, int idx)
 	//LOG("runq_choose_from returned NULL");
 
 	return (NULL);
+}
+
+void runq_print(struct runq *q)
+{
+	int i;
+	struct sched_ktz_entity *pos;
+	struct task_struct *t;
+
+	for (i = 0; i < KTZ_HEADS_PER_RUNQ; ++i) {
+		if (!list_empty(&q->queues[i])) {
+			LOG("\t-> Queue %d:\n", i);
+			list_for_each_entry(pos, &q->queues[i], runq) {
+				t = ktz_task_of(pos);
+				LOG("\t\t_ %d\n", t->pid);
+			}
+		}
+	}
 }

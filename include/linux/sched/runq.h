@@ -5,7 +5,7 @@
  * are placed, and a structure to maintain the status of each queue.
  */
 #define KTZ_HEADS_PER_RUNQ (MAX_KTZ_PRIO)
-#define KTZ_PRIO_PER_QUEUE (1)
+//#define KTZ_PRIO_PER_QUEUE (1)
 //#define KTZ_RUNQ_BITMAP_SIZE KTZ_HEADS_PER_RUNQ / (sizeof(unsigned long) * 8)
 #define KTZ_RUNQ_BITMAP_SIZE KTZ_HEADS_PER_RUNQ
 
@@ -23,3 +23,4 @@ void runq_remove(struct runq *q, struct task_struct *p);
 void runq_remove_idx(struct runq *q, struct task_struct *p, int *idx);
 struct task_struct *runq_choose(struct runq *rq);
 struct task_struct *runq_choose_from(struct runq *rq, int idx);
+void runq_print(struct runq *q);

@@ -273,7 +273,7 @@ static void compute_priority(struct task_struct *p)
 	}
 
 	/* Test : */
-	p->prio = pri;
+	//p->prio = pri;
 	ktz_se->base_user_pri = pri;
 	if (ktz_se->lend_user_pri <= pri)
 		return;
@@ -418,6 +418,21 @@ static inline void print_stats(struct task_struct *p)
 	LOG("\t| interact\t\t= %d", interact);
 }
 
+static inline void print_tdq(struct ktz_tdq *tdq)
+{
+	LOG("##################\n");
+	LOG("tdq %p\n", tdq);
+	LOG("idx : %d", tdq->idx);
+	LOG("ridx : %d", tdq->ridx);
+	LOG("Realtime runq :\n");
+	runq_print(&tdq->realtime);
+	LOG("Timeshare runq :\n");
+	runq_print(&tdq->timeshare);
+	LOG("Idle runq :\n");
+	runq_print(&tdq->idle);
+	LOG("##################\n");
+}	
+
 static inline struct task_struct *ktz_task_of(struct sched_ktz_entity *ktz_se)
 {
 	return container_of(ktz_se, struct task_struct, ktz_se);
@@ -440,9 +455,10 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 		pctcpu_update(ktz_se, false);
 	}
 	ktz_se->slice = 0;
-	list_add_tail(&ktz_se->run_list, queue);
+	//list_add_tail(&ktz_se->run_list, queue);
 
 	tdq_add(tdq, p, 0);
+	print_tdq(tdq);
 }
 
 static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
@@ -455,7 +471,7 @@ static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 		LOG("Task %d is going to sleep\n", p->pid);
 		ktz_se->slptick = jiffies;
 	}
-	list_del_init(&ktz_se->run_list);
+	//list_del_init(&ktz_se->run_list);
 	tdq_runq_rem(tdq, p);
 	tdq_load_rem(tdq, p);
 	print_stats(p);
@@ -470,13 +486,13 @@ static void yield_task_ktz(struct rq *rq)
  */
 static void check_preempt_curr_ktz(struct rq *rq, struct task_struct *p, int flags)
 {
-	int pri = p->prio;
+	/*int pri = p->prio;
 	int cpri = rq->curr->prio;
 
 	if (cpri <= pri)
 		return false;
 	else
-		return true;
+		return true;*/
 
 	// TODO : Add when adding SMP support.
 	/*if (remote && pri <= PRI_MAX_INTERACT && cpri > PRI_MAX_INTERACT)
@@ -490,7 +506,16 @@ static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct*
 	struct task_struct *next_task;
 	struct task_struct *next_ule;
 
-	next_ule = tdq_choose(tdq);
+	put_prev_task(rq, prev);
+	next_task = tdq_choose(tdq);
+	/*if (next_task)
+		LOG("Next task : %d\n", next_task->pid);
+	else
+		LOG("Next task : NULL\n");*/
+	if (!next_task)
+		LOG("tdq ridx : %d\n", tdq->ridx);
+	return next_task;
+	/*next_ule = tdq_choose(tdq);
 	if (next_ule)
 		LOG("Next ULE : %d\n", next_ule->pid);
 	else
@@ -505,7 +530,7 @@ static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct*
 		return next_task;
 	} else {
 		return NULL;
-	}
+	}*/
 }
 
 static void put_prev_task_ktz(struct rq *rq, struct task_struct *prev)
@@ -534,12 +559,13 @@ static void task_tick_ktz(struct rq *rq, struct task_struct *curr, int queued)
 			tdq->ridx = tdq->idx;
 	}
 
+	/* Update CPU stats. */
+	pctcpu_update(ktz_se, true);
+
 	/* Account runtime. */
 	ktz_se->runtime += tickincr;
 	interact_update(curr);
-
-	/* Update CPU stats. */
-	pctcpu_update(ktz_se, true);
+	compute_priority(curr);
 
 	if (!TD_IS_IDLETHREAD(curr) && ++ktz_se->slice >= compute_slice(tdq)) {
 		ktz_se->slice = 0;
