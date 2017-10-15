@@ -446,6 +446,11 @@ static inline struct task_struct *ktz_task_of(struct sched_ktz_entity *ktz_se)
 	return container_of(ktz_se, struct task_struct, ktz_se);
 }
 
+static inline bool is_enqueued(struct task_struct *p)
+{
+	return KTZ_SE(p)->curr_runq;
+}
+
 static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct ktz_tdq *tdq = TDQ(rq);
@@ -483,6 +488,7 @@ static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 	}
 	//list_del_init(&ktz_se->run_list);
 	tdq_runq_rem(tdq, p);
+	ktz_se->curr_runq = NULL;
 	tdq_load_rem(tdq, p);
 	print_stats(p);
 }
@@ -545,9 +551,15 @@ static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct*
 
 static void put_prev_task_ktz(struct rq *rq, struct task_struct *prev)
 {
-	/*struct ktz_tdq *tdq = TDQ(rq);
-	tdq_runq_rem(tdq, prev);
-	tdq_runq_add(tdq, prev, 0);*/
+	struct ktz_tdq *tdq = TDQ(rq);
+
+	if (is_enqueued(prev)) {
+		tdq_runq_rem(tdq, prev);
+		tdq_runq_add(tdq, prev, 0);
+	}
+	else {
+		LOG("PPT on non-enqueued task %d\n", prev->pid);
+	}
 }
 
 static void set_curr_task_ktz(struct rq *rq)
