@@ -267,13 +267,21 @@ static void compute_priority(struct task_struct *p)
 		pri += ((PRI_MAX_INTERACT - PRI_MIN_INTERACT + 1) / sched_interact) * score;
 	} else {
 		pri = SCHED_PRI_MIN;
-		if (ktz_se->ticks)
-			pri += min(SCHED_PRI_TICKS(ktz_se), SCHED_PRI_RANGE - 1);
+		if (ktz_se->ticks) {
+			int d;
+			d = min(SCHED_PRI_TICKS(ktz_se), SCHED_PRI_RANGE - 1);
+			if (d < 0) {
+				BUG();
+			}
+			pri += d;
+		}
 		pri += task_nice(p);
 	}
 
 	/* Test : */
 	//p->prio = pri;
+	LOG("Task %d, from %d to %d\n", p->pid, p->ktz_prio, pri);
+	p->ktz_prio = pri;
 	ktz_se->base_user_pri = pri;
 	if (ktz_se->lend_user_pri <= pri)
 		return;
@@ -294,7 +302,7 @@ static inline void tdq_runq_add(struct ktz_tdq *tdq, struct task_struct *td, int
 	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
 	THREAD_LOCK_ASSERT(td, MA_OWNED);
 
-	pri = td->static_prio;
+	pri = td->ktz_prio;
 	ts->state = TDS_RUNQ;	
 	if (THREAD_CAN_MIGRATE(td)) {
 		tdq->transferable++;
@@ -333,8 +341,8 @@ static inline void tdq_runq_add(struct ktz_tdq *tdq, struct task_struct *td, int
 static void tdq_add(struct ktz_tdq *tdq, struct task_struct *p, int flags)
 {
 	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
-	if (p->prio < tdq->lowpri)
-		tdq->lowpri = p->prio;
+	if (p->ktz_prio < tdq->lowpri)
+		tdq->lowpri = p->ktz_prio;
 	tdq_runq_add(tdq, p, flags);
 	tdq_load_add(tdq, p);
 }
@@ -398,7 +406,7 @@ struct task_struct *sched_choose(struct rq *rq)
 	td = tdq_choose(tdq);
 	if (td) {
 		tdq_runq_rem(tdq, td);
-		tdq->lowpri = td->prio;
+		tdq->lowpri = td->ktz_prio;
 		return td;
 	}
 	//tdq->lowpri = PRI_MAX_IDLE;
@@ -445,7 +453,9 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 	struct list_head *queue = &rq->ktz.queue;
 
 	add_nr_running(rq,1);
-	LOG("Add task %d with prio %d (%d)\n", p->pid, p->prio, p->static_prio);
+	if (p->ktz_prio == 0)
+		p->ktz_prio = p->prio;
+	LOG("Add task %d with prio %d (%d)\n", p->pid, p->ktz_prio, p->static_prio);
 	if (flags & ENQUEUE_WAKEUP) {
 		LOG("Task %d is waking up\n", p->pid);
 		/* Count sleeping ticks. */
@@ -486,8 +496,8 @@ static void yield_task_ktz(struct rq *rq)
  */
 static void check_preempt_curr_ktz(struct rq *rq, struct task_struct *p, int flags)
 {
-	/*int pri = p->prio;
-	int cpri = rq->curr->prio;
+	/*int pri = p->ktz_prio;
+	int cpri = rq->curr->ktz_prio;
 
 	if (cpri <= pri)
 		return false;
@@ -535,6 +545,9 @@ static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct*
 
 static void put_prev_task_ktz(struct rq *rq, struct task_struct *prev)
 {
+	/*struct ktz_tdq *tdq = TDQ(rq);
+	tdq_runq_rem(tdq, prev);
+	tdq_runq_add(tdq, prev, 0);*/
 }
 
 static void set_curr_task_ktz(struct rq *rq)

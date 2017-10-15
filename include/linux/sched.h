@@ -505,9 +505,9 @@ struct sched_ktz_entity {
 	unsigned long	slptime;	/* Number of ticks we vol. slept */
 	unsigned long long	slptick;/* First tick of current sleep */
 	unsigned long	runtime;	/* Number of ticks we were running */
-	int		ltick;	/* Last tick that we were running on */
-	int		ftick;	/* First tick that we were running on */
-	int		ticks;	/* Tick count */
+	unsigned long		ltick;	/* Last tick that we were running on */
+	unsigned long		ftick;	/* First tick that we were running on */
+	unsigned long		ticks;	/* Tick count */
 	int		rqindex;	/* Index of the runq in the tdq. */
 #ifdef KTR
 	//char		ts_name[TS_NAME_LEN];
@@ -589,6 +589,7 @@ struct task_struct {
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
 	struct sched_ktz_entity		ktz_se;
+	int				ktz_prio;
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group		*sched_task_group;
 #endif
