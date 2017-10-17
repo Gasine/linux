@@ -3829,11 +3829,7 @@ void set_user_nice(struct task_struct *p, long nice)
 		 * lowered its priority, then reschedule its CPU:
 		 */
 		if (delta < 0 || (delta > 0 && task_running(rq, p))) {
-			printk_deferred("set_user_nice : resched");
 			resched_curr(rq);
-		}
-		else {
-			printk_deferred("set_user_nice : NO resched");
 		}
 	}
 	if(running)

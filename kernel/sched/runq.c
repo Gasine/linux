@@ -132,18 +132,3 @@ struct task_struct *runq_choose_from(struct runq *rq, int idx)
 
 	return (NULL);
 }
-
-void runq_print(struct runq *q)
-{
-	int i;
-	struct sched_ktz_entity *pos;
-	struct task_struct *t;
-
-	for (i = 0; i < KTZ_HEADS_PER_RUNQ; ++i) {
-		if (!list_empty(&q->queues[i])) {
-			list_for_each_entry(pos, &q->queues[i], runq) {
-				t = ktz_task_of(pos);
-			}
-		}
-	}
-}

@@ -86,7 +86,7 @@ static int sched_slice_min = 1;	/* reset during boot. */
 #define PRINT(name)	printk_deferred(#name "\t\t = %d", name)
 #define TDQ(rq)		(&(rq)->ktz)
 
-#define LOG(...) 	do{}while(0)
+//#define LOG(...) 	do{}while(0)
 
 void init_ktz_tdq(struct ktz_tdq *ktz_tdq)
 {
@@ -281,8 +281,6 @@ static void compute_priority(struct task_struct *p)
 	}
 
 	/* Test : */
-	//p->prio = pri;
-	LOG("Task %d, from %d to %d\n", p->pid, p->ktz_prio, pri);
 	p->ktz_prio = pri;
 	ktz_se->base_user_pri = pri;
 	if (ktz_se->lend_user_pri <= pri)
@@ -312,21 +310,17 @@ static inline void tdq_runq_add(struct ktz_tdq *tdq, struct task_struct *td, int
 		//ts->flags |= TSF_XFERABLE;
 	}
 	if (pri < PRI_MIN_BATCH) {
-		LOG("Add %d to realtime.\n", td->pid);
 		dest = &tdq->realtime;
 	}
 	else if (pri <= PRI_MAX_BATCH) {
 		dest = &tdq->timeshare;
-		LOG("Add %d to timeshare, flag = %d\n", td->pid, flags);
 		if ((flags & SRQ_PREEMPTED) == 0) {
-			LOG("Weird path");
 			pri = KTZ_HEADS_PER_RUNQ * (pri - PRI_MIN_BATCH) / PRI_BATCH_RANGE;
 			pri = (pri + tdq->idx) % KTZ_HEADS_PER_RUNQ;
 			if (tdq->ridx != tdq->idx && pri == tdq->ridx)
 				pri = (unsigned char)(pri - 1) % KTZ_HEADS_PER_RUNQ;
 		}
 		else {
-			LOG("Ridx path");
 			pri = tdq->ridx;
 		}
 		runq_add_pri(dest, td, pri, flags);
@@ -334,7 +328,6 @@ static inline void tdq_runq_add(struct ktz_tdq *tdq, struct task_struct *td, int
 	}
 	else {
 		/* Should never happen. */
-		LOG("Add %d to idle.\n", td->pid);
 		dest = &tdq->idle;
 	}
 	runq_add(dest, td, flags);
@@ -384,12 +377,10 @@ static struct task_struct *tdq_choose(struct ktz_tdq *tdq)
 	TDQ_LOCK_ASSERT(tdq, MA_OWNED);
 	td = runq_choose(&tdq->realtime);
 	if (td != NULL) {
-		LOG("Return from realtime.");
 		return (td);
 	}
 	td = runq_choose_from(&tdq->timeshare, tdq->ridx);
 	if (td != NULL) {
-		LOG("Return from timeshare.");
 		return td;
 	}
 	td = runq_choose(&tdq->idle);
@@ -416,6 +407,11 @@ struct task_struct *sched_choose(struct rq *rq)
 	return NULL;
 }
 
+static inline struct task_struct *ktz_task_of(struct sched_ktz_entity *ktz_se)
+{
+	return container_of(ktz_se, struct task_struct, ktz_se);
+}
+
 static inline void print_stats(struct task_struct *p)
 {
 	struct sched_ktz_entity *kse = KTZ_SE(p);
@@ -426,6 +422,26 @@ static inline void print_stats(struct task_struct *p)
 	LOG("\t| slptime\t\t= %llu ms", st);
 	LOG("\t| runtime\t\t= %llu ms", rt);
 	LOG("\t| interact\t\t= %d", interact);
+	LOG("\t| ticks\t\t= %d", kse->ticks);
+	LOG("\t| lticks\t\t= %d", kse->ltick);
+	LOG("\t| fticks\t\t= %d", kse->ftick);
+}
+
+
+static inline void runq_print(struct runq *q)
+{
+	int i;
+	struct sched_ktz_entity *pos;
+	struct task_struct *t;
+
+	for (i = 0; i < KTZ_HEADS_PER_RUNQ; ++i) {
+		if (!list_empty(&q->queues[i])) {
+			list_for_each_entry(pos, &q->queues[i], runq) {
+				t = ktz_task_of(pos);
+				LOG("\t_ %d", t->pid);
+			}
+		}
+	}
 }
 
 static inline void print_tdq(struct ktz_tdq *tdq)
@@ -443,9 +459,21 @@ static inline void print_tdq(struct ktz_tdq *tdq)
 	LOG("##################\n");
 }	
 
-static inline struct task_struct *ktz_task_of(struct sched_ktz_entity *ktz_se)
+static inline void print_children(struct task_struct *p)
 {
-	return container_of(ktz_se, struct task_struct, ktz_se);
+	struct task_struct *pos;
+	struct list_head *head;
+	head = &(p->children);
+
+	LOG("Children of %d\n", p->pid); 
+	if (list_empty(head)) {
+		LOG("\tnone");
+	}
+	else {
+		list_for_each_entry(pos, head, sibling) {
+			LOG("\t%d\n", pos->pid);
+		}
+	}
 }
 
 static inline bool is_enqueued(struct task_struct *p)
@@ -462,9 +490,7 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 	add_nr_running(rq,1);
 	if (p->ktz_prio == 0)
 		p->ktz_prio = p->prio;
-	LOG("Add task %d with prio %d (%d)\n", p->pid, p->ktz_prio, p->static_prio);
 	if (flags & ENQUEUE_WAKEUP) {
-		LOG("Task %d is waking up\n", p->pid);
 		/* Count sleeping ticks. */
 		ktz_se->slptime += (jiffies - ktz_se->slptick) << SCHED_TICK_SHIFT;
 		ktz_se->slptick = 0;
@@ -472,10 +498,8 @@ static void enqueue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 		pctcpu_update(ktz_se, false);
 	}
 	ktz_se->slice = 0;
-	//list_add_tail(&ktz_se->run_list, queue);
 
 	tdq_add(tdq, p, 0);
-	print_tdq(tdq);
 }
 
 static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
@@ -485,14 +509,12 @@ static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 
 	sub_nr_running(rq,1);
 	if (flags & DEQUEUE_SLEEP) {
-		LOG("Task %d is going to sleep\n", p->pid);
 		ktz_se->slptick = jiffies;
 	}
 	//list_del_init(&ktz_se->run_list);
 	tdq_runq_rem(tdq, p);
 	ktz_se->curr_runq = NULL;
 	tdq_load_rem(tdq, p);
-	print_stats(p);
 }
 
 static void yield_task_ktz(struct rq *rq)
@@ -526,29 +548,7 @@ static struct task_struct *pick_next_task_ktz(struct rq *rq, struct task_struct*
 
 	put_prev_task(rq, prev);
 	next_task = tdq_choose(tdq);
-	/*if (next_task)
-		LOG("Next task : %d\n", next_task->pid);
-	else
-		LOG("Next task : NULL\n");*/
-	if (!next_task)
-		LOG("tdq ridx : %d\n", tdq->ridx);
 	return next_task;
-	/*next_ule = tdq_choose(tdq);
-	if (next_ule)
-		LOG("Next ULE : %d\n", next_ule->pid);
-	else
-		LOG("Next ULE : NULL\n");
-
-	if(!list_empty(&tdq->queue)) {
-		next = list_first_entry(&tdq->queue, struct sched_ktz_entity, run_list);
-                put_prev_task(rq, prev);
-		next->slice = compute_slice(tdq) - sched_slice_min;
-		next_task = ktz_task_of(next);
-		LOG("Next KTZ : %d\n", next_task->pid);
-		return next_task;
-	} else {
-		return NULL;
-	}*/
 }
 
 static void put_prev_task_ktz(struct rq *rq, struct task_struct *prev)
@@ -558,9 +558,6 @@ static void put_prev_task_ktz(struct rq *rq, struct task_struct *prev)
 	if (is_enqueued(prev)) {
 		tdq_runq_rem(tdq, prev);
 		tdq_runq_add(tdq, prev, 0);
-	}
-	else {
-		LOG("PPT on non-enqueued task %d\n", prev->pid);
 	}
 }
 
@@ -603,6 +600,13 @@ static void task_tick_ktz(struct rq *rq, struct task_struct *curr, int queued)
 
 static void task_fork_ktz(struct task_struct *p)
 {
+	struct sched_ktz_entity *ktz_se = KTZ_SE(p);
+	if (task_curr(p)) {
+		pctcpu_update(ktz_se, true);
+		ktz_se->runtime += tickincr;
+		interact_update(p);
+		compute_priority(p);
+	}
 }
 
 static void task_dead_ktz(struct task_struct *p)

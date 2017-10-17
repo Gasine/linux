@@ -23,4 +23,3 @@ void runq_remove(struct runq *q, struct task_struct *p);
 void runq_remove_idx(struct runq *q, struct task_struct *p, int *idx);
 struct task_struct *runq_choose(struct runq *rq);
 struct task_struct *runq_choose_from(struct runq *rq, int idx);
-void runq_print(struct runq *q);
