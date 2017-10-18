@@ -3601,6 +3601,7 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 		left = curr;
 
 	se = left; /* ideally we run the leftmost entity */
+	BUG_ON(!se);
 
 	/*
 	 * Avoid running the skip buddy, if running something else can
@@ -5933,7 +5934,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct pin_cookie c
 again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (!cfs_rq->nr_running)
-		goto idle;
+		return NULL;
 
 	if (prev->sched_class != &fair_sched_class)
 		goto simple;
@@ -6012,7 +6013,7 @@ simple:
 #endif
 
 	if (!cfs_rq->nr_running)
-		goto idle;
+		return NULL;
 
 	put_prev_task(rq, prev);
 
@@ -9023,7 +9024,7 @@ static unsigned int get_rr_interval_fair(struct rq *rq, struct task_struct *task
  * All the scheduling class methods:
  */
 const struct sched_class fair_sched_class = {
-	.next			= &idle_sched_class,
+	.next			= &ktz_sched_class,
 	.enqueue_task		= enqueue_task_fair,
 	.dequeue_task		= dequeue_task_fair,
 	.yield_task		= yield_task_fair,
