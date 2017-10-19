@@ -59,6 +59,7 @@ struct sched_param {
 #include <linux/gfp.h>
 #include <linux/magic.h>
 #include <linux/cgroup-defs.h>
+#include <linux/sched/sysctl.h>
 
 #include <asm/processor.h>
 
@@ -1993,16 +1994,14 @@ struct task_struct {
  */
 };
 
-#define MIN_KTZ_PRIO 139
-#define MAX_KTZ_PRIO 140
+#define MIN_KTZ_PRIO 100
+#define MAX_KTZ_PRIO 139
 #define KTZ_PRIO_RANGE (MAX_KTZ_PRIO - MIN_KTZ_PRIO + 1)
 #define KTZ_PREEMPTED 0x1
 
 static inline int ktz_prio(int prio)
 {
-	if (prio >= MIN_KTZ_PRIO && prio <= MAX_KTZ_PRIO)
-		return 1;
-	return 0;
+	return sysctl_ktz_enabled && MIN_KTZ_PRIO <= prio && prio <= MAX_KTZ_PRIO;
 }
 
 static inline int ktz_task(struct task_struct *p)
