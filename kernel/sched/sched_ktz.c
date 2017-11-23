@@ -1015,6 +1015,7 @@ static void dequeue_task_ktz(struct rq *rq, struct task_struct *p, int flags)
 	struct ktz_tdq *tdq = TDQ(rq);
 	struct sched_ktz_entity *ktz_se = KTZ_SE(p);
 
+	BUG_ON(!ktz_se->curr_runq);
 	sub_nr_running(rq,1);
 	if (flags & DEQUEUE_SLEEP) {
 		ktz_se->slptick = jiffies;
